@@ -347,9 +347,115 @@ with tab2:
 
 # ─── Tab 3: Artist Path Finder ────────────────────────────────────────────────
 
+@st.cache_data
+def build_name_index(_G):
+    """Build lowercase name -> node_id map and sorted name list for fuzzy matching."""
+    name_to_id = {}
+    for node_id, data in _G.nodes(data=True):
+        name = data.get('name', '').strip()
+        if name:
+            name_to_id[name.lower()] = node_id
+    return name_to_id, sorted(name_to_id.keys())
+
+def fuzzy_find(query, name_to_id, all_names):
+    """Return (node_id, matched_name) or (None, None) if no close match."""
+    q = query.strip().lower()
+    if q in name_to_id:
+        return name_to_id[q], q
+    import difflib
+    matches = difflib.get_close_matches(q, all_names, n=1, cutoff=0.6)
+    if matches:
+        return name_to_id[matches[0]], matches[0]
+    return None, None
+
 with tab3:
     st.header("Artist Path Finder")
-    st.write("Interactive feature coming next.")
+
+    st.markdown("""
+    Type in any two artists and this tool finds the shortest collaboration path between them.
+    Our network has an average shortest path of **6.18 hops** -- nearly identical to the
+    classical six degrees of separation. Try it for yourself!
+
+    > **Tip:** Use the artist's name as it appears on Spotify. Slight misspellings are handled automatically.
+    """)
+
+    name_to_id, all_names = build_name_index(G_full)
+
+    col1, col2 = st.columns(2)
+    with col1:
+        artist_a = st.text_input("First artist", placeholder="e.g. Diplo")
+    with col2:
+        artist_b = st.text_input("Second artist", placeholder="e.g. Beyoncé")
+
+    if st.button("Find Path", type="primary"):
+        if not artist_a or not artist_b:
+            st.warning("Please enter both artist names.")
+        else:
+            id_a, matched_a = fuzzy_find(artist_a, name_to_id, all_names)
+            id_b, matched_b = fuzzy_find(artist_b, name_to_id, all_names)
+
+            if id_a is None:
+                st.error(f"Could not find an artist matching **{artist_a}** in the network.")
+            elif id_b is None:
+                st.error(f"Could not find an artist matching **{artist_b}** in the network.")
+            else:
+                # Show fuzzy match corrections
+                if matched_a != artist_a.strip().lower():
+                    st.info(f"Interpreted **{artist_a}** as **{matched_a.title()}**")
+                if matched_b != artist_b.strip().lower():
+                    st.info(f"Interpreted **{artist_b}** as **{matched_b.title()}**")
+
+                try:
+                    path = nx.shortest_path(G_full, id_a, id_b)
+                    hops = len(path) - 1
+
+                    if hops == 0:
+                        st.success("These are the same artist!")
+                    else:
+                        st.success(
+                            f"Found a path of **{hops} hop{'s' if hops != 1 else ''}** -- "
+                            f"{'well within' if hops <= 6 else 'just above'} six degrees of separation!"
+                        )
+
+                        st.markdown("#### Collaboration Chain")
+                        for i, node_id in enumerate(path):
+                            data = G_full.nodes[node_id]
+                            name = data.get('name', node_id)
+                            genre = data.get('Genre', 'Unknown')
+                            color = complete_genre_color_map.get(genre, '#C0C0C0')
+                            if i == 0:
+                                label = "START"
+                            elif i == len(path) - 1:
+                                label = "END"
+                            else:
+                                label = f"Hop {i}"
+
+                            st.markdown(
+                                f"<div style='padding:10px; margin:4px 0; border-left: 4px solid {color}; "
+                                f"background:#1e1e1e; border-radius:4px;'>"
+                                f"<span style='color:#aaa; font-size:12px'>{label}</span><br>"
+                                f"<span style='font-size:18px; font-weight:bold'>{name}</span> "
+                                f"<span style='color:{color}; font-size:13px'>● {genre}</span>"
+                                f"</div>",
+                                unsafe_allow_html=True
+                            )
+                            if i < len(path) - 1:
+                                st.markdown(
+                                    "<div style='text-align:center; color:#555; font-size:20px'>↓ collaborated with</div>",
+                                    unsafe_allow_html=True
+                                )
+
+                        st.caption(
+                            f"The average shortest path in this network is 6.18 hops. "
+                            f"Your result of {hops} hop{'s' if hops != 1 else ''} "
+                            f"{'supports' if hops <= 7 else 'is an outlier to'} the small world hypothesis."
+                        )
+
+                except nx.NetworkXNoPath:
+                    st.error(
+                        "No path found between these two artists. "
+                        "They may be in disconnected parts of the network."
+                    )
 
 # ─── Tab 4: Genre Brokers ─────────────────────────────────────────────────────
 
