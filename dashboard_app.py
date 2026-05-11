@@ -74,7 +74,7 @@ with tab1:
     ### What is this?
     This dashboard explores a collaboration network built from Spotify's weekly chart data.
     Each **node** is an artist. Each **edge** connects two artists who have collaborated on
-    a charting song. The network spans **148,380 artists** and **296,763 collaborations**
+    a charting song. The network spans **156326 artists** and **300386 collaborations**
     across 70+ countries.
 
     ### Research Questions
@@ -87,13 +87,13 @@ with tab1:
     # Key stats row
     st.subheader("Key Network Statistics")
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Total Artists", "148,380")
-    c2.metric("Total Collaborations", "296,763")
+    c1.metric("Total Artists", "156326")
+    c2.metric("Total Collaborations", "300386")
     c3.metric("Avg. Shortest Path", "6.18 hops")
     c4.metric("Six Degrees?", "Yes")
 
     st.caption(
-        "The average shortest path of 6.18 hops across 148,380 artists closely matches "
+        "The average shortest path of 6.18 hops across 156326 artists closely matches "
         "the classical six degrees of separation hypothesis."
     )
 
@@ -338,7 +338,7 @@ with tab2:
         st.plotly_chart(fig, width='stretch')
     else:
         st.markdown(
-            "Showing the full collaboration network with all 148,380 artists. "
+            "Showing the full collaboration network with all 156326 artists. "
             "This may take a moment to render."
         )
         with st.spinner("Rendering full graph -- this may take a while..."):
