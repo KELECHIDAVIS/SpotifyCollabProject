@@ -459,6 +459,95 @@ with tab3:
 
 # ─── Tab 4: Genre Brokers ─────────────────────────────────────────────────────
 
+@st.cache_data
+def get_top_brokers(_G, n=20):
+    rows = []
+    for node_id, data in _G.nodes(data=True):
+        bc = data.get('Betweenness Centrality')
+        name = data.get('name', node_id)
+        genre = data.get('Genre', 'Other')
+        degree = data.get('Total Degree', 0)
+        if bc is not None and name:
+            rows.append({
+                'Artist': name,
+                'Genre': genre,
+                'Betweenness Centrality': float(bc),
+                'Total Degree': int(float(degree)),
+            })
+    rows.sort(key=lambda x: x['Betweenness Centrality'], reverse=True)
+    return rows[:n]
+
 with tab4:
     st.header("Genre Brokers")
-    st.write("Betweenness centrality table coming next.")
+
+    st.markdown("""
+    **Betweenness centrality** measures how often an artist appears on the shortest path
+    between two other artists. High betweenness means the artist acts as a bridge --
+    remove them and many collaboration chains break.
+
+    Our key finding: despite Electronic music representing only **4.07%** of the network,
+    EDM producers dominate the top brokers list. Genre-fluid producers like Diplo, R3HAB,
+    and David Guetta routinely collaborate across Hip Hop, Pop, Latin, and R&B -- making
+    them the connective tissue of the global music industry.
+    """)
+
+    st.divider()
+
+    brokers = get_top_brokers(G_partial, n=20)
+
+    # Controls
+    top_n = st.slider("Number of artists to show", min_value=5, max_value=20, value=10, step=1)
+    brokers_subset = brokers[:top_n]
+
+    # Bar chart
+    names = [r['Artist'] for r in brokers_subset]
+    bc_vals = [r['Betweenness Centrality'] for r in brokers_subset]
+    genres = [r['Genre'] for r in brokers_subset]
+    colors = [complete_genre_color_map.get(g, '#C0C0C0') for g in genres]
+
+    fig_brokers = go.Figure(go.Bar(
+        x=bc_vals[::-1],
+        y=names[::-1],
+        orientation='h',
+        marker=dict(color=colors[::-1]),
+        text=genres[::-1],
+        textposition='inside',
+        hovertemplate='<b>%{y}</b><br>Betweenness: %{x:,.0f}<br>Genre: %{text}<extra></extra>',
+    ))
+    fig_brokers.update_layout(
+        template='plotly_dark',
+        height=max(400, top_n * 45),
+        margin=dict(t=20, b=40, l=20, r=20),
+        xaxis=dict(title="Betweenness Centrality", showgrid=True),
+        yaxis=dict(title="", tickfont=dict(size=12)),
+    )
+    st.plotly_chart(fig_brokers, width='stretch')
+
+    st.caption(
+        "Bar color reflects the artist's genre community. "
+        "Notice how Electronic (blue) dominates despite being a small fraction of the total network."
+    )
+
+    st.divider()
+
+    # Table
+    st.subheader("Full Rankings Table")
+    import pandas as pd
+    if brokers_subset:
+        df = pd.DataFrame(brokers_subset)
+        df.index = range(1, len(df) + 1)
+        df['Betweenness Centrality'] = df['Betweenness Centrality'].apply(lambda x: f'{x:,.0f}')
+        df['Total Degree'] = df['Total Degree'].apply(lambda x: f'{x:,}')
+        st.dataframe(df, width='stretch')
+    else:
+        st.warning("No broker data found. Make sure the graph loaded correctly.")
+
+    st.markdown("""
+    #### Why EDM Producers?
+    Electronic music producers operate differently from artists in genre-specific scenes.
+    A Hip Hop artist typically collaborates within Hip Hop. An EDM producer releases
+    tracks featuring artists from every genre. One week a Latin singer, the next a
+    K-Pop idol, the next an R&B vocalist. This genre-fluid workflow places them on the
+    shortest path between communities that would otherwise be far apart, giving them
+    outsized centrality relative to their community size.
+    """)
