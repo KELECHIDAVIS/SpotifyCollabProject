@@ -10,7 +10,10 @@ st.set_page_config(page_title="Spotify Collaboration Network", layout="wide")
 def load_gexf_manual(filepath):
     tree = ET.parse(filepath)
     root = tree.getroot()
-    ns = {'g': 'http://gexf.net/1.3'}
+    ns = {
+        'g': 'http://gexf.net/1.3',
+        'viz': 'http://gexf.net/1.3/viz'
+    }
 
     attr_map = {}
     for attr in root.findall('.//g:attribute', ns):
@@ -25,10 +28,15 @@ def load_gexf_manual(filepath):
             title = attr_map.get(attval.attrib['for'])
             if title:
                 attrs[title] = attval.attrib['value']
-        pos_elem = node.find('g:position', ns)
+
+        # Handle both viz:position (complete_graph) and bare position (filtered_graph)
+        pos_elem = node.find('viz:position', ns)
+        if pos_elem is None:
+            pos_elem = node.find('g:position', ns)
         if pos_elem is not None:
             attrs['x'] = float(pos_elem.attrib['x'])
             attrs['y'] = float(pos_elem.attrib['y'])
+
         G.add_node(node_id, **attrs)
 
     for edge in root.findall('.//g:edge', ns):
@@ -79,8 +87,8 @@ with tab1:
     # Key stats row
     st.subheader("Key Network Statistics")
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Total Artists", "156,326")
-    c2.metric("Total Collaborations", "300,386")
+    c1.metric("Total Artists", "148,380")
+    c2.metric("Total Collaborations", "296,763")
     c3.metric("Avg. Shortest Path", "6.18 hops")
     c4.metric("Six Degrees?", "Yes")
 
@@ -158,13 +166,184 @@ with tab1:
         xaxis=dict(title="Number of Artists", showgrid=True),
         yaxis=dict(title="", tickfont=dict(size=12)),
     )
-    st.plotly_chart(fig_bar, use_container_width=True)
+    st.plotly_chart(fig_bar, width='stretch')
+
+# ─── Shared color maps ────────────────────────────────────────────────────────
+
+partial_genre_color_map = {
+    "Electronic": "#00C4FF",
+    "Latin": "#FF683C",
+    "Hip Hop": "#2CD500",
+    "Brazilian Funk": "#FF7BFF",
+    "Classical/Misc": "#DDBE65",
+    "Bollywood": "#FF65A1",
+    "UK Hip Hop/South African Pop": "#D04B3C",
+    "Dutch Hip Hop": "#E27339",
+    "French Hip Hop": "#00008B",
+    "Polish/Czech Hip Hop": "#C72E26",
+    "German Hip Hop": "#F5CD46",
+    "Italian Hip Hop": "#7F3841",
+    "K-Pop": "#A491EF",
+    "Other": "#C0C0C0"
+}
+
+complete_genre_color_map = {
+    "Electronic": "#00C4FF",
+    "Latin": "#FF683C",
+    "Hip Hop": "#2CD500",
+    "Brazilian Funk": "#FF7BFF",
+    "Classical/Misc": "#DDBE65",
+    "Bollywood": "#FF65A1",
+    "Scandinavian Hip Hop": "#DDBE65",
+    "German Hip Hop": "#F5CD46",
+    "French Hip Hop": "#00008B",
+    "Dutch Hip Hop": "#E27339",
+    "European Dance Pop": "#FF3179",
+    "Italian Hip Hop": "#40904E",
+    "Romanian Pop": "#2D6072",
+    "Russian Hip Hop": "#67B3B7",
+    "Southeast Asian": "#D2436D",
+    "South African Pop": "#D04B3C",
+    "Polish Hip Hop": "#C72E26",
+    "Traditional Pop": "#B395A3",
+    "Turkish Hip Hop": "#965F29",
+    "C-Pop": "#F13B34",
+    "Finnish Hip Hop": "#0F2E68",
+    "Czech Hip Hop": "#009270",
+    "V-Pop": "#2F6D34",
+    "Greek Hip Hop": "#1C44B7",
+    "K-Pop": "#A491EF",
+    "J-Pop": "#FF92FF",
+    "Thai Hip Hop": "#FF8092",
+    "Egyptian/Arab Pop": "#F2B460",
+    "Israeli Pop": "#3273B3",
+    "Portuguese Hip Hop": "#9BC2BE",
+    "Latvian/Lithuanian Pop": "#92393C",
+    "Other": "#C0C0C0"
+}
+
+def build_network_figure(G, genre_color_map):
+    node_x, node_y, node_text, node_size, node_colors = [], [], [], [], []
+
+    for node, data in G.nodes(data=True):
+        node_x.append(data.get('x', 0))
+        node_y.append(data.get('y', 0))
+
+        genre_str = data.get('Genre', 'Other')
+        node_colors.append(genre_color_map.get(genre_str, "#C0C0C0"))
+
+        degree = int(float(data.get('Total Degree', 1)))
+        artist_name = data.get('name', node)
+        node_size.append(degree)
+        node_text.append(
+            f"<b>{artist_name}</b><br>"
+            f"Genre: {genre_str}<br>"
+            f"Degree: {degree}"
+        )
+
+    max_degree = max(node_size) if node_size else 1
+    node_border_widths = [((d / max_degree) * 2) + 0.5 for d in node_size]
+
+    node_trace = go.Scatter(
+        x=node_x, y=node_y,
+        mode='markers',
+        hoverinfo='text',
+        text=node_text,
+        showlegend=False,
+        marker=dict(
+            color=node_colors,
+            size=node_size,
+            sizemode='area',
+            sizeref=2. * max_degree / (30**2),
+            line=dict(width=node_border_widths),
+            opacity=1.0
+        )
+    )
+
+    edge_groups = {color: {'x': [], 'y': []} for color in genre_color_map.values()}
+    for edge in G.edges():
+        x0 = G.nodes[edge[0]].get('x', 0)
+        y0 = G.nodes[edge[0]].get('y', 0)
+        x1 = G.nodes[edge[1]].get('x', 0)
+        y1 = G.nodes[edge[1]].get('y', 0)
+        genre = G.nodes[edge[0]].get('Genre', 'Other')
+        color = genre_color_map.get(genre, "#C0C0C0")
+        edge_groups[color]['x'].extend([x0, x1, None])
+        edge_groups[color]['y'].extend([y0, y1, None])
+
+    edge_traces = []
+    for color, coords in edge_groups.items():
+        if coords['x']:
+            edge_traces.append(go.Scatter(
+                x=coords['x'], y=coords['y'],
+                line=dict(width=0.3, color=color),
+                hoverinfo='none',
+                mode='lines',
+                opacity=0.000001 if color == "#C0C0C0" else 1.0,
+                showlegend=False
+            ))
+
+    legend_traces = [
+        go.Scatter(
+            x=[None], y=[None],
+            mode='markers',
+            marker=dict(size=10, color=color),
+            legendgroup=genre,
+            showlegend=True,
+            name=genre
+        )
+        for genre, color in genre_color_map.items()
+    ]
+
+    fig = go.Figure(
+        data=edge_traces + [node_trace] + legend_traces,
+        layout=go.Layout(
+            height=900,
+            template='plotly_dark',
+            showlegend=True,
+            legend=dict(yanchor="middle", y=0.5, xanchor="left", x=1.01),
+            margin=dict(b=0, l=0, r=0, t=0),
+            xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+            yaxis=dict(showgrid=False, zeroline=False, showticklabels=False,
+                       scaleanchor="x", scaleratio=1)
+        )
+    )
+    return fig
 
 # ─── Tab 2: Network Overview ──────────────────────────────────────────────────
 
 with tab2:
     st.header("Network Overview")
-    st.write("Visualization coming next.")
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Nodes", G_full.number_of_nodes())
+    c2.metric("Edges", G_full.number_of_edges())
+    c3.metric("Genre Communities", len(complete_genre_color_map) - 1)
+
+    st.divider()
+
+    view_option = st.radio(
+        "Select graph view:",
+        ["Top 1% by Degree (fast)", "Full Network (slow)"],
+        horizontal=True
+    )
+
+    if view_option == "Top 1% by Degree (fast)":
+        st.markdown(
+            "Showing the top ~1% of artists by degree (50+ collaborations). "
+            "Node size reflects total degree. Colors represent genre communities."
+        )
+        with st.spinner("Rendering graph..."):
+            fig = build_network_figure(G_partial, partial_genre_color_map)
+        st.plotly_chart(fig, width='stretch')
+    else:
+        st.markdown(
+            "Showing the full collaboration network with all 148,380 artists. "
+            "This may take a moment to render."
+        )
+        with st.spinner("Rendering full graph -- this may take a while..."):
+            fig = build_network_figure(G_full, complete_genre_color_map)
+        st.plotly_chart(fig, width='stretch')
 
 # ─── Tab 3: Artist Path Finder ────────────────────────────────────────────────
 
